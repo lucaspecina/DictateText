@@ -1,0 +1,5 @@
+azure-cognitiveservices-speech>=1.45
+pywin32>=306
+python-dotenv>=1.0
+sounddevice>=0.4
+pycaw>=20230407
