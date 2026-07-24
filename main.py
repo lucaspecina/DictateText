@@ -381,6 +381,9 @@ class App:
 
     def _start(self, sid: int) -> None:
         t_press = time.monotonic()
+        # Resetear YA el reloj del overlay: se muestra antes de que el mic
+        # este listo, y si no quedaria contando desde la sesion anterior.
+        self.record_started = t_press
         # PRIMERO la ventana destino, antes de tocar cualquier otra cosa.
         self.target_hwnd = user32.GetForegroundWindow()
         self.target_title = window_title(self.target_hwnd)
