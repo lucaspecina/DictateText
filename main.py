@@ -401,7 +401,9 @@ class App:
                         else windows_default_mic() or "")
             if mic_name:
                 log.info("Mic default de Windows (comunicaciones): %s", mic_name)
-        self.set_overlay("recording")  # feedback inmediato; el mic puede tardar
+        # "warming" = ⏳ todavia NO hables: el mic (sobre todo Bluetooth) puede
+        # tardar ~2s en escuchar de verdad; lo hablado antes se pierde.
+        self.set_overlay("warming")
         try:
             self.stt.start()
             rec = MicRecorder(device=resolve_candidates(mic_name), on_chunk=on_chunk)
@@ -426,6 +428,7 @@ class App:
             log.warning("El mic no entrego audio en 2.5s — destino: %s",
                         self.target_title)
         self.record_started = time.monotonic()
+        self.set_overlay("recording")  # ahora si: 🔴 habla
         user32.MessageBeep(0x40)
         timer = threading.Timer(self.max_seconds, lambda: self._auto_stop(sid))
         timer.daemon = True
@@ -747,7 +750,7 @@ def run_gui(app: App, ui_q: queue.Queue, hotkeys: HotkeyThread,
 
     _make_noactivate(mini)
 
-    overlay_mode = [None]  # None | "recording" | "finishing"
+    overlay_mode = [None]  # None | "warming" | "recording" | "finishing"
 
     def show_overlay(mode: str | None) -> None:
         overlay_mode[0] = mode
@@ -755,8 +758,15 @@ def run_gui(app: App, ui_q: queue.Queue, hotkeys: HotkeyThread,
             mini.withdraw()
             live.set("")
             return
-        rec_lbl.configure(text="🔴" if mode == "recording" else "⏳",
-                          fg=RED if mode == "recording" else YELLOW)
+        if mode == "recording":
+            rec_lbl.configure(text="🔴", fg=RED)
+            mini_text.configure(text="¡hablá ahora!")
+        elif mode == "warming":
+            rec_lbl.configure(text="⏳", fg=YELLOW)
+            mini_text.configure(text="esperá el beep…")
+        else:  # finishing
+            rec_lbl.configure(text="⏳", fg=YELLOW)
+            mini_text.configure(text="transcribiendo…")
         mini.update_idletasks()
         left, top, right, bottom = _work_area()
         mini.geometry(f"+{right - mini.winfo_reqwidth() - 12}"
@@ -766,8 +776,11 @@ def run_gui(app: App, ui_q: queue.Queue, hotkeys: HotkeyThread,
 
     def apply_state(state: str) -> None:
         if state == "recording":
-            status.set(f"🔴  GRABANDO — {specs['dictate'].upper()} para pegar")
+            status.set(f"🔴  HABLÁ AHORA — {specs['dictate'].upper()} para pegar")
             status_lbl.configure(fg=GREEN)
+        elif state == "warming":
+            status.set("⏳  Preparando el micrófono — todavía no hables…")
+            status_lbl.configure(fg=YELLOW)
         elif state == "finishing":
             status.set("⏳  Transcribiendo…")
             status_lbl.configure(fg=YELLOW)

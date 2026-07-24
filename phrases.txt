@@ -43,3 +43,37 @@ GPT
 machine learning
 DictateText
 SpeakSelectedText
+# Voseo / español rioplatense: el modelo es-MX tiende a "corregir" estas
+# formas a "dilo"/"hazlo"; boostearlas evita que las confunda.
+vos
+che
+decilo
+hacelo
+fijate
+dale
+mirá
+probá
+andá
+vení
+poné
+sacá
+mandá
+agregá
+borrá
+cambiá
+guardá
+abrí
+escribí
+decime
+contame
+pasame
+avisame
+mostrame
+esperá
+tenés
+podés
+querés
+sabés
+hacés
+decís
+acá
