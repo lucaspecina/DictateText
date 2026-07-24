@@ -7,6 +7,7 @@ Si el dispositivo no acepta 16 kHz, se abre a 48 kHz y se decima x3 promediando.
 
 import array
 import logging
+import threading
 
 import sounddevice as sd
 
@@ -76,6 +77,9 @@ class MicRecorder:
         self.level = 0.0
         self.peak = 0.0  # maximo de toda la sesion (diagnostico de mic mudo)
         self.bytes_total = 0
+        # Se setea cuando el mic entrega el PRIMER chunk: recien ahi esta
+        # realmente escuchando (un Bluetooth puede tardar ~1s en activarse).
+        self.first_chunk = threading.Event()
         self._stream = None
         self._decimate = False
 
@@ -109,6 +113,7 @@ class MicRecorder:
         self.level = (max(abs(s) for s in samples) / 32768.0) if samples else 0.0
         self.peak = max(self.peak, self.level)
         self.bytes_total += len(pcm)
+        self.first_chunk.set()
         self.on_chunk(pcm)
 
     def stop(self) -> None:

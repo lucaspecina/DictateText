@@ -8,6 +8,8 @@ El inverso de [SpeakSelectedText](../SpeakSelectedText/): dejás el cursor en cu
 | `Ctrl+Alt+X` | Cancelar el dictado en curso (descarta todo) |
 | `Ctrl+Alt+Shift+D` | Salir |
 
+**El beep significa "ya podés hablar"**: suena recién cuando el micrófono entregó su primer chunk de audio real (un headset Bluetooth tarda ~1s en activar el modo manos-libres; lo hablado antes de eso no llega a grabarse). Esperá el beep y no se pierde ni la primera sílaba.
+
 Si hay música o video sonando (Spotify, YouTube, etc.), **se pausa solo mientras dictás y se reanuda al terminar** — via las media sessions de Windows ([media.py](media.py), el mismo módulo de SpeakSelectedText); se apaga con `DUCK_MEDIA=0`.
 
 Usa el servicio Speech del recurso Azure AI Foundry (`amalia-resource`, East US 2) — **misma key y mismo endpoint que SpeakSelectedText**, no hace falta ningún recurso extra. Detecta solo si hablás en español o inglés (`LANGUAGES`), pone puntuación automáticamente, y transcribe en **streaming**: cuando cortás, el resultado ya está casi listo (<1s), no espera a procesar todo el audio junto.
@@ -86,6 +88,7 @@ Crea un acceso directo a `pythonw.exe main.py` en `shell:startup` (mismo esquema
 - **No graba nada / "ERROR al arrancar"** — verificar Configuración → Privacidad → Micrófono → permitir apps de escritorio. Probar con `test_stt.py`. Elegir otro micrófono en el dropdown de la GUI.
 - **Transcribe pero no pega** — la app destino corre elevada (como admin) y bloquea el input sintético, o se cerró: el texto queda en el portapapeles, pegalo con `Ctrl+V`.
 - **Error de Azure en el log** — correr `test_stt.py` para aislar si es credencial/red o la capa de hotkey.
+- **Se pierden las primeras palabras** — empezaste a hablar antes del beep: el mic (sobre todo Bluetooth) todavía no estaba entregando audio. El log dice cuánto tardó ("Mic listo en N ms").
 - **Mezcla mal los idiomas** — fijar uno solo: `LANGUAGES=es-AR`.
 
 ## Port a Mac (pendiente)

@@ -307,6 +307,7 @@ class App:
         self._session = 0
         self._last_hotkey = 0.0
         self._audio = bytearray()  # copia de la sesion para last_dictation.wav
+        self._default_mic: str | None = None  # cache, ver _refresh_mic_cache
 
     @property
     def state(self) -> str:
@@ -364,8 +365,21 @@ class App:
         log.info("Dictado cancelado")
         with self._lock:
             self._state = "idle"
+        threading.Thread(target=self._refresh_mic_cache, daemon=True).start()
+
+    def _refresh_mic_cache(self) -> None:
+        """Re-escanea PortAudio y resuelve el mic default de Windows. Corre en
+        background (al arrancar y despues de cada dictado) para que el camino
+        del hotkey no gaste ni un milisegundo en esto."""
+        try:
+            refresh_devices()
+            self._default_mic = windows_default_mic() or ""
+            log.debug("Mic default cacheado: %s", self._default_mic or "(PortAudio)")
+        except Exception:
+            log.debug("No pude refrescar el cache de mic", exc_info=True)
 
     def _start(self, sid: int) -> None:
+        t_press = time.monotonic()
         # PRIMERO la ventana destino, antes de tocar cualquier otra cosa.
         self.target_hwnd = user32.GetForegroundWindow()
         self.target_title = window_title(self.target_hwnd)
@@ -375,10 +389,12 @@ class App:
             self._audio.extend(pcm)
             self.stt.feed(pcm)
 
-        refresh_devices()  # que un headset recien enchufado aparezca
+        # La musica se frena en paralelo: no retrasa el arranque del mic.
+        threading.Thread(target=self.ducker.pause_playing, daemon=True).start()
         mic_name = self.get_device()
         if not mic_name:
-            mic_name = windows_default_mic() or ""
+            mic_name = (self._default_mic if self._default_mic is not None
+                        else windows_default_mic() or "")
             if mic_name:
                 log.info("Mic default de Windows (comunicaciones): %s", mic_name)
         try:
@@ -394,12 +410,17 @@ class App:
                 self._state = "idle"
             return
         self.recorder = rec
-        self.record_started = time.monotonic()
-        # El mic ya esta grabando: la musica puede tardar ~300ms en frenarse
-        # sin perder el arranque de la frase.
-        self.ducker.pause_playing()
-        log.info("Grabando — destino: %s", self.target_title)
         self.set_overlay("recording")
+        # El beep significa "ya podes hablar": suena recien cuando el mic
+        # entrego audio de verdad (un Bluetooth tarda ~1s en activar el modo
+        # manos libres; lo hablado antes de eso no existe para nadie).
+        if rec.first_chunk.wait(2.5):
+            log.info("Mic listo en %d ms — destino: %s",
+                     (time.monotonic() - t_press) * 1000, self.target_title)
+        else:
+            log.warning("El mic no entrego audio en 2.5s — destino: %s",
+                        self.target_title)
+        self.record_started = time.monotonic()
         user32.MessageBeep(0x40)
         timer = threading.Timer(self.max_seconds, lambda: self._auto_stop(sid))
         timer.daemon = True
@@ -449,6 +470,7 @@ class App:
             user32.MessageBeep(0x30)
         with self._lock:
             self._state = "idle"
+        threading.Thread(target=self._refresh_mic_cache, daemon=True).start()
 
     def _save_debug_wav(self) -> None:
         """Guarda el audio de la sesion: si Azure no reconocio nada, este
@@ -869,6 +891,9 @@ def main() -> int:
         notify=lambda msg: ui_q.put(("status", msg)),
         set_overlay=lambda mode: ui_q.put(("overlay", mode)),
     )
+
+    threading.Thread(target=app._refresh_mic_cache, daemon=True,
+                     name="mic-cache").start()
 
     hotkeys = HotkeyThread({
         HK_DICTATE: (specs["dictate"], app.on_dictate_hotkey),
