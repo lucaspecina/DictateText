@@ -878,6 +878,8 @@ def main() -> int:
 
     stt = AzureSpeechSTT(
         key, endpoint, languages,
+        phrases_path=APP_DIR / "phrases.txt",
+        lid_mode=os.environ.get("LID_MODE", "AtStart"),
         on_partial=lambda text: ui_q.put(("partial", text)),
         on_error=lambda msg: ui_q.put(("status", msg)),
     )

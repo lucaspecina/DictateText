@@ -16,6 +16,7 @@ Los parciales van llegando por on_partial(texto_acumulado) para mostrar en vivo.
 
 import logging
 import threading
+from pathlib import Path
 
 import azure.cognitiveservices.speech as speechsdk
 
@@ -26,10 +27,13 @@ SAMPLE_RATE = 16000  # lo que espera Azure STT; recorder.py entrega esto
 
 class AzureSpeechSTT:
     def __init__(self, key: str, endpoint: str, languages: list[str],
+                 phrases_path: str | Path | None = None, lid_mode: str = "AtStart",
                  on_partial=lambda text: None, on_error=lambda msg: None):
         self.key = key
         self.endpoint = endpoint
         self.languages = languages
+        self.phrases_path = phrases_path
+        self.lid_mode = lid_mode
         self.on_partial = on_partial
         self.on_error = on_error
         self._recognizer = None
@@ -53,15 +57,18 @@ class AzureSpeechSTT:
         self._ended = threading.Event()
 
         if len(self.languages) > 1:
-            # Deteccion de idioma continua: puede cambiar es<->en a mitad
-            # del dictado. Si diera problemas, fijar un solo idioma en .env.
-            try:
-                cfg.set_property(
-                    speechsdk.PropertyId.SpeechServiceConnection_LanguageIdMode,
-                    "Continuous",
-                )
-            except Exception:
-                log.debug("No pude activar LID continuo", exc_info=True)
+            # LID_MODE=AtStart (default): decide el idioma UNA vez al comienzo
+            # del dictado y no cambia mas — los terminos en ingles sueltos los
+            # maneja el modelo de espanol. "Continuous" puede saltar de idioma
+            # a mitad de frase (y arruinar el resto si salta mal).
+            if self.lid_mode.lower() == "continuous":
+                try:
+                    cfg.set_property(
+                        speechsdk.PropertyId.SpeechServiceConnection_LanguageIdMode,
+                        "Continuous",
+                    )
+                except Exception:
+                    log.debug("No pude activar LID continuo", exc_info=True)
             auto = speechsdk.languageconfig.AutoDetectSourceLanguageConfig(
                 languages=self.languages
             )
@@ -76,6 +83,16 @@ class AzureSpeechSTT:
                 speech_config=cfg, audio_config=audio_cfg
             )
 
+        phrases = self._load_phrases()
+        if phrases:
+            # Contexto para el reconocedor: sesga hacia estos terminos
+            # (jerga tecnica, anglicismos, nombres propios).
+            grammar = speechsdk.PhraseListGrammar.from_recognizer(self._recognizer)
+            for phrase in phrases:
+                grammar.addPhrase(phrase)
+            log.info("Phrase list: %d terminos de %s",
+                     len(phrases), Path(self.phrases_path).name)
+
         r = self._recognizer
         r.recognizing.connect(self._on_recognizing)
         r.recognized.connect(self._on_recognized)
@@ -84,6 +101,20 @@ class AzureSpeechSTT:
         # No bloquea: el handshake con Azure corre en paralelo mientras el
         # push stream va acumulando el audio del microfono.
         r.start_continuous_recognition_async()
+
+    def _load_phrases(self) -> list[str]:
+        """Se relee en cada dictado: editar phrases.txt aplica sin reiniciar."""
+        if not self.phrases_path:
+            return []
+        try:
+            lines = Path(self.phrases_path).read_text(encoding="utf-8").splitlines()
+        except FileNotFoundError:
+            return []
+        except Exception:
+            log.debug("No pude leer %s", self.phrases_path, exc_info=True)
+            return []
+        return [ln.strip() for ln in lines
+                if ln.strip() and not ln.strip().startswith("#")]
 
     def feed(self, pcm: bytes) -> None:
         stream = self._stream

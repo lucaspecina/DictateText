@@ -1,0 +1,45 @@
+# Terminos que el reconocedor debe favorecer (uno por linea, # = comentario).
+# Jerga tecnica, anglicismos y nombres propios que decis en medio del espanol.
+# Se relee en cada dictado: editar y guardar alcanza, sin reiniciar la app.
+commit
+el commit
+hacer commit
+commit y push
+push
+pull
+pull request
+merge
+branch
+rebase
+repo
+deploy
+build
+release
+feature
+bug
+debug
+log
+script
+backend
+frontend
+endpoint
+API
+token
+prompt
+hotkey
+clipboard
+mail
+chat
+review
+issue
+ticket
+sprint
+Azure
+Foundry
+GitHub
+Python
+Claude
+GPT
+machine learning
+DictateText
+SpeakSelectedText

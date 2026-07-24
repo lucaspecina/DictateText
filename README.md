@@ -12,6 +12,8 @@ El inverso de [SpeakSelectedText](../SpeakSelectedText/): dejás el cursor en cu
 
 Si hay música o video sonando (Spotify, YouTube, etc.), **se pausa solo mientras dictás y se reanuda al terminar** — via las media sessions de Windows ([media.py](media.py), el mismo módulo de SpeakSelectedText); se apaga con `DUCK_MEDIA=0`.
 
+**Jerga técnica**: [phrases.txt](phrases.txt) le da contexto al reconocedor — términos que decís en inglés en medio del español ("commit", "push", "deploy", nombres propios). Un término por línea, se relee en cada dictado (editar y guardar alcanza, sin reiniciar). Requiere un locale que soporte phrase lists (`es-MX`/`es-ES` sí, `es-AR` no).
+
 Usa el servicio Speech del recurso Azure AI Foundry (`amalia-resource`, East US 2) — **misma key y mismo endpoint que SpeakSelectedText**, no hace falta ningún recurso extra. Detecta solo si hablás en español o inglés (`LANGUAGES`), pone puntuación automáticamente, y transcribe en **streaming**: cuando cortás, el resultado ya está casi listo (<1s), no espera a procesar todo el audio junto.
 
 ## Cómo funciona (y por qué pega en el lugar correcto)
@@ -74,7 +76,8 @@ Crea un acceso directo a `pythonw.exe main.py` en `shell:startup` (mismo esquema
 | Variable | Default | Notas |
 |---|---|---|
 | `SPEECH_KEY` / `SPEECH_ENDPOINT` | — | Key y endpoint `*.cognitiveservices.azure.com` del recurso Foundry |
-| `LANGUAGES` | `es-AR,en-US` | Detección automática entre estos idiomas (máx. 10); uno solo = fijo, más rápido |
+| `LANGUAGES` | `es-MX,en-US` | Detección automática entre estos idiomas (máx. 10); uno solo = fijo, más rápido. Ojo: `es-AR` no soporta phrase lists y transcribe mal los anglicismos |
+| `LID_MODE` | `AtStart` | `AtStart` decide el idioma al comienzo del dictado y no cambia más; `Continuous` puede saltar de idioma a mitad de frase (arriesgado) |
 | `DICTATE_HOTKEY` / `CANCEL_HOTKEY` / `QUIT_HOTKEY` | `ctrl+alt+d` / `ctrl+alt+x` / `ctrl+alt+shift+d` | Formato `ctrl+alt+<letra\|dígito\|fN>` |
 | `MIC_DEVICE` | *(default del sistema)* | Vacío = usa el mic default **de comunicaciones** de Windows (el headset si hay uno; se re-resuelve en cada dictado, así que enchufar/desenchufar el headset alcanza). Un nombre (o fragmento) lo fija a mano; también elegible desde la GUI |
 | `MAX_SECONDS` | `300` | Corte automático de la grabación (seguridad de costo) |
