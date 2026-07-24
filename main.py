@@ -40,7 +40,8 @@ import win32con
 from dotenv import load_dotenv, set_key
 
 from media import MediaDucker
-from recorder import MicRecorder, list_input_devices, refresh_devices, resolve_device
+from recorder import (MicRecorder, list_input_devices, refresh_devices,
+                      resolve_candidates)
 from stt import AzureSpeechSTT
 
 APP_DIR = Path(__file__).resolve().parent
@@ -397,20 +398,21 @@ class App:
                         else windows_default_mic() or "")
             if mic_name:
                 log.info("Mic default de Windows (comunicaciones): %s", mic_name)
+        self.set_overlay("recording")  # feedback inmediato; el mic puede tardar
         try:
             self.stt.start()
-            rec = MicRecorder(device=resolve_device(mic_name), on_chunk=on_chunk)
+            rec = MicRecorder(device=resolve_candidates(mic_name), on_chunk=on_chunk)
             rec.start()
         except Exception:
             log.exception("No pude arrancar el dictado (¿microfono?)")
             self.notify("ERROR al arrancar (¿microfono? ¿permisos?) — ver log")
             user32.MessageBeep(0x10)
             self.stt.cancel()
+            self.set_overlay(None)
             with self._lock:
                 self._state = "idle"
             return
         self.recorder = rec
-        self.set_overlay("recording")
         # El beep significa "ya podes hablar": suena recien cuando el mic
         # entrego audio de verdad (un Bluetooth tarda ~1s en activar el modo
         # manos libres; lo hablado antes de eso no existe para nadie).
