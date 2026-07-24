@@ -39,6 +39,7 @@ import win32clipboard
 import win32con
 from dotenv import load_dotenv, set_key
 
+from media import MediaDucker
 from recorder import MicRecorder, list_input_devices, refresh_devices, resolve_device
 from stt import AzureSpeechSTT
 
@@ -286,10 +287,11 @@ def reactivate_window(hwnd, timeout: float = 1.5) -> bool:
 class App:
     """Maquina de estados: idle -> recording -> finishing -> idle."""
 
-    def __init__(self, stt: AzureSpeechSTT, get_device, max_seconds: int,
-                 restore_clipboard: bool, restore_delay: float,
+    def __init__(self, stt: AzureSpeechSTT, ducker: MediaDucker, get_device,
+                 max_seconds: int, restore_clipboard: bool, restore_delay: float,
                  notify=lambda msg: None, set_overlay=lambda mode: None):
         self.stt = stt
+        self.ducker = ducker
         self.get_device = get_device  # callable: nombre del mic elegido en la GUI
         self.max_seconds = max_seconds
         self.restore_clipboard = restore_clipboard
@@ -356,6 +358,7 @@ class App:
             self.recorder.stop()
             self.recorder = None
         self.stt.cancel()
+        self.ducker.resume_paused_async()
         self.set_overlay(None)
         self.notify("Dictado cancelado")
         log.info("Dictado cancelado")
@@ -392,6 +395,9 @@ class App:
             return
         self.recorder = rec
         self.record_started = time.monotonic()
+        # El mic ya esta grabando: la musica puede tardar ~300ms en frenarse
+        # sin perder el arranque de la frase.
+        self.ducker.pause_playing()
         log.info("Grabando — destino: %s", self.target_title)
         self.set_overlay("recording")
         user32.MessageBeep(0x40)
@@ -424,6 +430,7 @@ class App:
             log.exception("Error cerrando el reconocimiento")
             text = ""
         log.info("Reconocimiento cerrado en %.1fs", time.monotonic() - t0)
+        self.ducker.resume_paused_async()
         self.set_overlay(None)
         if text:
             self._paste(text)
@@ -794,6 +801,12 @@ def run_gui(app: App, ui_q: queue.Queue, hotkeys: HotkeyThread,
             app.cancel()
         except Exception:
             pass
+        # Si salimos en medio de un dictado, devolver la musica (bloqueante
+        # a proposito: un thread daemon moriria antes de terminar).
+        try:
+            app.ducker.resume_paused()
+        except Exception:
+            pass
         log.info("Saliendo")
 
 
@@ -845,8 +858,10 @@ def main() -> int:
         on_error=lambda msg: ui_q.put(("status", msg)),
     )
     mic = {"name": mic_name}  # compartido con la GUI (dropdown de microfono)
+    ducker = MediaDucker(enabled=os.environ.get("DUCK_MEDIA", "1") == "1")
     app = App(
         stt,
+        ducker,
         get_device=lambda: mic["name"],
         max_seconds=max_seconds,
         restore_clipboard=restore_clip,

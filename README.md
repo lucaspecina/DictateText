@@ -8,6 +8,8 @@ El inverso de [SpeakSelectedText](../SpeakSelectedText/): dejás el cursor en cu
 | `Ctrl+Alt+X` | Cancelar el dictado en curso (descarta todo) |
 | `Ctrl+Alt+Shift+D` | Salir |
 
+Si hay música o video sonando (Spotify, YouTube, etc.), **se pausa solo mientras dictás y se reanuda al terminar** — via las media sessions de Windows ([media.py](media.py), el mismo módulo de SpeakSelectedText); se apaga con `DUCK_MEDIA=0`.
+
 Usa el servicio Speech del recurso Azure AI Foundry (`amalia-resource`, East US 2) — **misma key y mismo endpoint que SpeakSelectedText**, no hace falta ningún recurso extra. Detecta solo si hablás en español o inglés (`LANGUAGES`), pone puntuación automáticamente, y transcribe en **streaming**: cuando cortás, el resultado ya está casi listo (<1s), no espera a procesar todo el audio junto.
 
 ## Cómo funciona (y por qué pega en el lugar correcto)
@@ -74,6 +76,7 @@ Crea un acceso directo a `pythonw.exe main.py` en `shell:startup` (mismo esquema
 | `DICTATE_HOTKEY` / `CANCEL_HOTKEY` / `QUIT_HOTKEY` | `ctrl+alt+d` / `ctrl+alt+x` / `ctrl+alt+shift+d` | Formato `ctrl+alt+<letra\|dígito\|fN>` |
 | `MIC_DEVICE` | *(default del sistema)* | Vacío = usa el mic default **de comunicaciones** de Windows (el headset si hay uno; se re-resuelve en cada dictado, así que enchufar/desenchufar el headset alcanza). Un nombre (o fragmento) lo fija a mano; también elegible desde la GUI |
 | `MAX_SECONDS` | `300` | Corte automático de la grabación (seguridad de costo) |
+| `DUCK_MEDIA` | `1` | Pausar la música/video mientras se dicta y reanudar al terminar |
 | `RESTORE_CLIPBOARD` | `1` | Restaurar el clipboard anterior después de pegar |
 | `RESTORE_DELAY_MS` | `300` | Cuánto esperar a que la app destino lea el clipboard antes de restaurarlo |
 
