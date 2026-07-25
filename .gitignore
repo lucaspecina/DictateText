@@ -219,3 +219,6 @@ __marimo__/
 
 # Audio de pruebas
 *.wav
+
+# Lock de instancia unica (Mac)
+.dictate_text.lock

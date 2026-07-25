@@ -1,0 +1,8 @@
+# Dependencias para macOS (la version Windows usa requirements.txt)
+azure-cognitiveservices-speech>=1.45
+python-dotenv>=1.0
+sounddevice>=0.4
+pyobjc-core>=10
+pyobjc-framework-Cocoa>=10
+pyobjc-framework-Quartz>=10
+pyobjc-framework-ApplicationServices>=10

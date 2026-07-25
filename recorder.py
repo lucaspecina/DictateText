@@ -2,11 +2,18 @@
 
 Entrega chunks PCM 16 kHz 16-bit mono (el formato que espera stt.py) y expone
 `level` (0..1, pico del ultimo chunk) para el medidor visual del overlay.
-Si el dispositivo no acepta 16 kHz, se abre a 48 kHz y se decima x3 promediando.
+
+Sample rates: en Windows se abre a 16 kHz (los hostapis resamplean bien) con
+fallback a 48 kHz decimando x3. En macOS se abre al rate NATIVO del
+dispositivo y se remuestrea aca: CoreAudio acepta abrir un mic Bluetooth
+(AirPods) a un rate que no es el nativo, pero entrega PURO SILENCIO — ceros,
+sin error (visto con AirPods 4: nativo 24 kHz, abiertos a 16 kHz daban
+peak 0.000).
 """
 
 import array
 import logging
+import sys
 import threading
 import time
 
@@ -17,6 +24,7 @@ log = logging.getLogger(__name__)
 TARGET_RATE = 16000
 FALLBACK_RATE = 48000
 CHUNK_MS = 100
+IS_MAC = sys.platform == "darwin"
 
 
 def list_input_devices() -> list[tuple[int, str]]:
@@ -112,6 +120,45 @@ def _decimate3(pcm: bytes) -> bytes:
     ).tobytes()
 
 
+def _resample_to_16k(pcm: bytes, src_rate: int) -> bytes:
+    """src_rate -> 16 kHz por interpolacion lineal (para rates que no son
+    multiplo entero, p. ej. los 24 kHz nativos de unos AirPods)."""
+    a = array.array("h", pcm)
+    if not a:
+        return b""
+    n_out = int(len(a) * TARGET_RATE / src_rate)
+    step = src_rate / TARGET_RATE
+    out = array.array("h", bytes(2 * n_out))
+    last = len(a) - 1
+    for i in range(n_out):
+        pos = i * step
+        j = int(pos)
+        frac = pos - j
+        s0 = a[j if j <= last else last]
+        s1 = a[j + 1 if j + 1 <= last else last]
+        out[i] = int(s0 + (s1 - s0) * frac)
+    return out.tobytes()
+
+
+def _rate_plan(device: int | None) -> list[int]:
+    """Rates a intentar, en orden. Windows: 16k y despues 48k (como siempre).
+    Mac: primero el rate nativo del dispositivo (ver docstring del modulo),
+    despues 48k, y 16k como ultimo recurso."""
+    if not IS_MAC:
+        return [TARGET_RATE, FALLBACK_RATE]
+    native = 0
+    try:
+        info = (sd.query_devices(device) if device is not None
+                else sd.query_devices(kind="input"))
+        native = int(round(info["default_samplerate"]))
+    except Exception:
+        log.debug("No pude leer el rate nativo del dispositivo", exc_info=True)
+    plan = [native, FALLBACK_RATE, TARGET_RATE] if native else \
+           [FALLBACK_RATE, TARGET_RATE]
+    seen: set[int] = set()
+    return [r for r in plan if not (r in seen or seen.add(r))]
+
+
 class MicRecorder:
     """Una instancia por sesion de dictado: start() -> chunks -> stop().
 
@@ -131,8 +178,13 @@ class MicRecorder:
         # Se setea cuando el mic entrega el PRIMER chunk: recien ahi esta
         # realmente escuchando (un Bluetooth puede tardar ~1s en activarse).
         self.first_chunk = threading.Event()
+        # Primer chunk con SEÑAL de verdad: CoreAudio puede entregar chunks
+        # de puros ceros mientras el Bluetooth termina de cambiar de perfil;
+        # un mic vivo siempre tiene piso de ruido distinto de cero. Este es
+        # el evento que debe esperar el "beep de ya podes hablar" en Mac.
+        self.first_audio = threading.Event()
         self._stream = None
-        self._decimate = False
+        self._src_rate = TARGET_RATE  # rate real del stream abierto
 
     def start(self) -> None:
         # Los AirPods (y otros Bluetooth) no entregan microfono hasta que algo
@@ -147,7 +199,7 @@ class MicRecorder:
 
     def _try_candidates(self) -> bool:
         for dev in self.candidates:
-            for rate, decimate in ((TARGET_RATE, False), (FALLBACK_RATE, True)):
+            for rate in _rate_plan(dev):
                 try:
                     stream = self._open(rate, dev)
                     stream.start()
@@ -160,7 +212,7 @@ class MicRecorder:
                 # error pero no entregan NI UN chunk: verificar que fluya
                 # audio de verdad antes de darlo por bueno. Un mic vivo manda
                 # chunks aunque haya silencio (llegan ceros igual).
-                self._decimate = decimate
+                self._src_rate = rate
                 if self.first_chunk.wait(1.2):
                     self._stream = stream
                     self.device = dev
@@ -228,14 +280,28 @@ class MicRecorder:
         if status:
             log.debug("Mic status: %s", status)
         pcm = bytes(indata)
-        if self._decimate:
+        if self._src_rate == FALLBACK_RATE:
             pcm = _decimate3(pcm)
+        elif self._src_rate != TARGET_RATE:
+            pcm = _resample_to_16k(pcm, self._src_rate)
         samples = array.array("h", pcm)
         self.level = (max(abs(s) for s in samples) / 32768.0) if samples else 0.0
         self.peak = max(self.peak, self.level)
         self.bytes_total += len(pcm)
         self.first_chunk.set()
+        if self.level > 0.0:
+            self.first_audio.set()
         self.on_chunk(pcm)
+
+    def device_name(self) -> str:
+        """Nombre del dispositivo que realmente abrio (resolviendo el default
+        del sistema al aparato concreto)."""
+        try:
+            info = (sd.query_devices(self.device) if self.device is not None
+                    else sd.query_devices(kind="input"))
+            return info["name"]
+        except Exception:
+            return ""
 
     def stop(self) -> None:
         stream, self._stream = self._stream, None
